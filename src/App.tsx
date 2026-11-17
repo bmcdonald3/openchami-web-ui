@@ -102,6 +102,7 @@ function App() {
   const [pane, setPane] = useState<Pane>('overview');
   const [connection, setConnection] = useState(initialConnection);
   const [draft, setDraft] = useState(initialConnection);
+  const [managedAuth, setManagedAuth] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [components, setComponents] = useState<RecordValue[]>([]);
   const [nodes, setNodes] = useState<RecordValue[]>([]);
@@ -143,6 +144,24 @@ function App() {
     setNodeForm({ name: selectedNode, mac });
     setBootForm((current) => ({ ...current, mac }));
   }, [selectedNode, selectedNodeRecord]);
+
+  useEffect(() => {
+    let active = true;
+    fetch('/api/config').then(async (response) => {
+      if (!response.ok) return undefined;
+      return response.json() as Promise<{ smdUrl?: string; bssUrl?: string; managedAuth?: boolean }>;
+    }).then((config) => {
+      if (!active || !config) return;
+      setManagedAuth(config.managedAuth === true);
+      if (!config.smdUrl || !config.bssUrl) return;
+      const next = { ...initialConnection, smdUrl: config.smdUrl, bssUrl: config.bssUrl };
+      setConnection(next);
+      setDraft(next);
+      if (config.managedAuth) setAutoRefresh(true);
+      void refreshAll(next);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   async function refreshAll(nextConnection = connection) {
     setLoading(true);
@@ -334,12 +353,12 @@ function App() {
 
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}><section className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <div className="modal-head"><div><span className="modal-kicker">LOCAL CONNECTION</span><h2 id="settings-title">Connect cluster services</h2></div><button className="icon-btn" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={17} /></button></div>
-        <p>Enter local port-forward URLs. Credentials are kept in this tab’s memory and sent only with requests to their matching service.</p>
+        <p>{managedAuth ? 'The launcher manages temporary TokenSmith credentials on the remote console server. Leave token overrides blank to use them; tokens are never returned to this browser.' : 'Enter local port-forward URLs and separate service tokens. Tokens stay in this tab’s memory and are sent only with requests to their matching service.'}</p>
         <form onSubmit={(event) => void saveConnection(event)}>
           <label>SMD service URL<input required type="url" placeholder="http://127.0.0.1:39101" value={draft.smdUrl} onChange={(event) => setDraft({ ...draft, smdUrl: event.target.value })} /></label>
-          <label>SMD bearer token <small>audience: hsm</small><span className="input-icon"><KeyRound size={15} /><input type="password" autoComplete="off" placeholder="TokenSmith hsm token" value={draft.smdToken} onChange={(event) => setDraft({ ...draft, smdToken: event.target.value })} /></span></label>
+          <label>SMD bearer token override <small>audience: hsm</small><span className="input-icon"><KeyRound size={15} /><input type="password" autoComplete="off" placeholder={managedAuth ? 'Managed for this session' : 'TokenSmith hsm token'} value={draft.smdToken} onChange={(event) => setDraft({ ...draft, smdToken: event.target.value })} /></span></label>
           <label>BSS service URL<input required type="url" placeholder="http://127.0.0.1:39102" value={draft.bssUrl} onChange={(event) => setDraft({ ...draft, bssUrl: event.target.value })} /></label>
-          <label>BSS bearer token <small>audience: boot-service</small><span className="input-icon"><KeyRound size={15} /><input type="password" autoComplete="off" placeholder="TokenSmith boot-service token" value={draft.bssToken} onChange={(event) => setDraft({ ...draft, bssToken: event.target.value })} /></span></label>
+          <label>BSS bearer token override <small>audience: boot-service</small><span className="input-icon"><KeyRound size={15} /><input type="password" autoComplete="off" placeholder={managedAuth ? 'Managed for this session' : 'TokenSmith boot-service token'} value={draft.bssToken} onChange={(event) => setDraft({ ...draft, bssToken: event.target.value })} /></span></label>
           <div className="modal-note"><LockKeyhole size={14} />Local proxy accepts loopback URLs only. Use kubectl port-forward to expose cluster services locally.</div>
           <div className="modal-buttons"><button type="button" className="secondary-btn" onClick={() => setSettingsOpen(false)}>Cancel</button><button className="primary-btn" type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={15} /> : <PlugZap size={15} />} Connect & refresh</button></div>
         </form>

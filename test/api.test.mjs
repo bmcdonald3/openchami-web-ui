@@ -33,7 +33,12 @@ before(async () => {
   await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
   upstreamUrl = `http://127.0.0.1:${upstream.address().port}`;
 
-  proxy = createServer(createApiHandler({ discovery: async (body) => ({ inventory: [], target: body.target, xname: body.xname }) }));
+  proxy = createServer(createApiHandler({
+    discovery: async (body) => ({ inventory: [], target: body.target, xname: body.xname }),
+    smdUrl: upstreamUrl,
+    bssUrl: upstreamUrl,
+    tokens: { smd: 'managed-smd-secret', bss: 'managed-bss-secret' },
+  }));
   await new Promise((resolve) => proxy.listen(0, '127.0.0.1', resolve));
   proxyUrl = `http://127.0.0.1:${proxy.address().port}`;
 });
@@ -158,6 +163,20 @@ exit 0
     await new Promise((resolve) => discoveryProxy.close(resolve));
     await rm(testDir, { recursive: true, force: true });
   }
+});
+
+test('returns only non-secret runtime config and uses managed tokens server-side', async () => {
+  const configResponse = await fetch(`${proxyUrl}/api/config`);
+  assert.equal(configResponse.status, 200);
+  const config = await configResponse.json();
+  assert.deepEqual(config, { smdUrl: upstreamUrl, bssUrl: upstreamUrl, managedAuth: true });
+  assert.equal(JSON.stringify(config).includes('managed-smd-secret'), false);
+  assert.equal(JSON.stringify(config).includes('managed-bss-secret'), false);
+
+  await post('/api/service', { operation: 'smd.components', smdUrl: upstreamUrl });
+  assert.equal(upstreamRequests.at(-1).authorization, 'Bearer managed-smd-secret');
+  await post('/api/service', { operation: 'bss.nodes', bssUrl: upstreamUrl });
+  assert.equal(upstreamRequests.at(-1).authorization, 'Bearer managed-bss-secret');
 });
 
 test('rejects unsupported operations, external targets, cross-origin and non-JSON requests', async () => {

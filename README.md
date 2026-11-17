@@ -2,6 +2,26 @@
 
 A local web interface for connecting to an OpenCHAMI control plane that you start and manage separately. The app does not deploy the operator or control plane. It provides cluster status, SMD inventory browsing, Magellan BMC discovery, explicit SMD import, BSS node management, boot-parameter submission, and iPXE lookups.
 
+## Start It Through Tamarindo
+
+From this checkout on your Mac, run:
+
+```sh
+./start-console.sh
+```
+
+The launcher copies the current app to `/root/openchami-web-ui` over SSH, checks the remote tools and active Kubernetes context, forwards SMD and BSS on Tamarindo, mints temporary audience-specific TokenSmith tokens, starts the console on the remote loopback interface, and opens an SSH tunnel to `http://127.0.0.1:5175`. The UI connects automatically. Press Ctrl-C in the launcher terminal to stop the tunnel and its remote processes. It does not install system packages or start the operator/control plane.
+
+The remote machine needs Node.js 20.19+ with npm, the app dependencies, `kubectl` configured for the cluster, `curl`, and Magellan on `PATH`. If any are missing, the launcher stops and tells you what it could not find. Install tools manually using your site's approved modules/packages. Once Node/npm are available, install JavaScript dependencies on Tamarindo with `cd /root/openchami-web-ui && npm ci`, using an approved npm registry or cache if outbound downloads are restricted. If Magellan is not on `PATH`, set `MAGELLAN_BIN` to its remote executable path when starting the launcher.
+
+Defaults are `root@tamarindo.hpc.amslabs.hpecorp.net`, active remote kubectl context, namespace `openchami-testcluster`, SMD service port `27779`, and BSS service port `27778`. Override them without editing the script, for example:
+
+```sh
+REMOTE_HOST=root@your-host OPENCHAMI_NAMESPACE=your-namespace LOCAL_PORT=5180 ./start-console.sh
+```
+
+The launcher mints the same `hsm` and `boot-service` audience tokens as the reference demo. They are passed only to the remote console process, not saved or returned to the browser. BMC credentials are still entered in the Discovery screen when you run a scan.
+
 ## Run the Console
 
 Requirements: Node.js 20.19+ and npm.

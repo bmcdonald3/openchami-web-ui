@@ -161,7 +161,7 @@ async function runDiscovery(body, binary = process.env.MAGELLAN_BIN || 'magellan
   }
 }
 
-async function handleService(body) {
+async function handleService(body, options = {}) {
   const operation = serviceOperations[body.operation];
   if (!operation) throw new Error('That service operation is not supported.');
   const baseUrl = localServiceUrl(body[operation.service === 'smd' ? 'smdUrl' : 'bssUrl']);
@@ -176,7 +176,11 @@ async function handleService(body) {
     target.searchParams.set(queryKey, body.identifier.trim());
   }
   const headers = { Accept: 'application/json, text/plain' };
-  if (operation.token && typeof body.token === 'string' && body.token.trim()) headers.Authorization = `Bearer ${body.token.trim()}`;
+  const managedToken = operation.service === 'smd'
+    ? options.tokens?.smd ?? process.env.OPENCHAMI_SMD_TOKEN
+    : options.tokens?.bss ?? process.env.OPENCHAMI_BSS_TOKEN;
+  const token = typeof body.token === 'string' && body.token.trim() ? body.token.trim() : managedToken;
+  if (operation.token && token) headers.Authorization = `Bearer ${token}`;
   let payload;
   if (operation.method !== 'GET') {
     if (!body.payload || typeof body.payload !== 'object' || Array.isArray(body.payload)) throw new Error('A JSON payload is required for this operation.');
@@ -200,6 +204,16 @@ export function createApiHandler(options = {}) {
     if (!pathname.startsWith('/api/')) return next();
     response.setHeader('Content-Type', 'application/json; charset=utf-8');
     if (!assertOrigin(request, response)) return;
+    if (pathname === '/api/config') {
+      if (request.method !== 'GET') return responseJson(response, 405, { error: 'Use GET for runtime configuration.' });
+      const smdToken = options.tokens?.smd ?? process.env.OPENCHAMI_SMD_TOKEN;
+      const bssToken = options.tokens?.bss ?? process.env.OPENCHAMI_BSS_TOKEN;
+      return responseJson(response, 200, {
+        smdUrl: options.smdUrl ?? process.env.OPENCHAMI_SMD_URL ?? '',
+        bssUrl: options.bssUrl ?? process.env.OPENCHAMI_BSS_URL ?? '',
+        managedAuth: Boolean(smdToken && bssToken),
+      });
+    }
     if (request.method !== 'POST') return responseJson(response, 405, { error: 'Use POST for console operations.' });
     if (!request.headers['content-type']?.startsWith('application/json')) return responseJson(response, 415, { error: 'Requests must use application/json.' });
 
@@ -210,7 +224,7 @@ export function createApiHandler(options = {}) {
         return responseJson(response, 200, result);
       }
       if (pathname !== '/api/service') return responseJson(response, 404, { error: 'Unknown local API route.' });
-      const result = await handleService(body);
+      const result = await handleService(body, options);
       return responseJson(response, 200, result);
     } catch (error) {
       const status = error.name === 'TimeoutError' ? 504 : error.name === 'TypeError' ? 502 : 400;
